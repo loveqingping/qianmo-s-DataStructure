@@ -13,7 +13,7 @@ btree_node_t* btree_search(btree_node_t* x, int key, int* seq)
     //要想理解原因，必须要理解B树形成的过程，x->key[n - 1]关键码的两个子树x->child[n-1]，x->child[n]什么时候形成
     
     //假设此时x->child[n]指向的y子节点已满, 该子节点需要进行分裂， x->child[n]
-    //指向原来的y x->child[n+1]指向新的z节点，在B树中任何内部节点中每个关键码
+    //指向原来的y x->child[n+1]指向新的z节点(n还未增加所以是n+1)，，在B树中任何内部节点中每个关键码
     //的左右子树必定同时存在
     int i = 0;
     while(i < x->n && x->key[i] < key)
