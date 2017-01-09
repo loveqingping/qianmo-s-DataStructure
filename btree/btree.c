@@ -133,6 +133,7 @@ void btree_insert_nofull(btree_node_t* x, int k)
             x->key[j + 1] = x->key[j];
         }
         x->key[j + 1] = k;
+        x->n++;
     }
     //如果x不是叶子节点, 需要插入到以x为根的子树中适当的叶节点中
     else
@@ -156,8 +157,13 @@ void btree_insert_nofull(btree_node_t* x, int k)
             if(k > x->key[j])
             {
                 j = j + 1;
-                btree_insert_nofull(x, j);
             }
+
+            btree_insert_nofull(x->child[j], k);
+        }
+        else
+        {
+            btree_insert_nofull(x->child[j], k);
         }
     }
 }
@@ -475,9 +481,51 @@ void btree_delete(btree_t* T, btree_node_t* x, int k)
                 btree_release_node(&y);
             }
         }
-
+        //调整完成以后，继续删除
+        btree_delete(T, y, k);
     }
-
 }
 
+void __btree_print (btree_node_t* x)
+{
+    int i;
+    for (i = 0; i < x->n; i++) {
+            if (!x->leaf)
+                __btree_print (x->child[i]);
+            printf ("%d ", x->key[i]);
+        }   
+    if (!x->leaf)
+        __btree_print (x->child[i]);
+}
 
+void btree_print (btree_t* T)
+{
+    __btree_print (T->root);
+}
+
+void __btree_graph (btree_node_t* x)
+{
+    int i;
+    printf ("\"%p\" [shape=box,label=\"", x);
+    for (i = 0; i < x->n; i++)
+        printf("%d ", x->key[i]);
+    printf ("\"];\n");
+
+    for (i = 0; i < x->n; i++) {
+        if (!x->leaf) {
+            printf ("\"%p\" -> \"%p\";\n", x, x->child[i]);
+            __btree_graph (x->child[i]);
+        }
+    }
+    if (!x->leaf) {
+        printf ("\"%p\" -> \"%p\";\n", x, x->child[i]);
+        __btree_graph (x->child[i]);
+    }
+}
+
+void btree_graph (btree_t* T)
+{
+    printf ("digraph graphname {\n");
+    __btree_graph (T->root);
+    printf ("}\n");
+}
