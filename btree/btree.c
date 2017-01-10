@@ -332,7 +332,7 @@ void btree_delete(btree_t* T, btree_node_t* x, int k)
     else
     {
         //3a:如果x->child[i]->n == t - 1 但是它的相邻兄弟至少有t个关键字, 则将
-        //x中某个关键字降至x->child[i] 中将x->child[i]的相邻兄弟的， 并且将该
+        //x中某个关键字降至x->child[i] 中，将x->child[i]的相邻兄弟的最小关键字上升到x中， 并且将该
         //关键字相应的孩子指针移到x->child[i]中
         
         //如果x已经是叶节点了，肯定找不到了，直接返回即可
