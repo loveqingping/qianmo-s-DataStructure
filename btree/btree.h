@@ -25,3 +25,10 @@ typedef struct __btree
     int h;                //B树的树高
 }btree_t;
 
+btree_t* btree_create(int degree);
+void btree_insert(btree_t* T, int key);
+void btree_delete(btree_t* T, btree_node_t* x, int k);
+void btree_graph(btree_t* T);
+
+
+

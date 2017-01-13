@@ -19,6 +19,8 @@ rb_tree_node_t* rb_tree_alloc_node(int key, rb_tree_node_t* init_para)
     pnode->right = init_para;
     pnode->left = init_para;
     pnode->parent = init_para;
+    pnode->prev_time = NULL;
+    pnode->next_time = NULL;
     return pnode;
 }
 int rb_tree_release_node(rb_tree_node_t** ppnode)
@@ -51,6 +53,9 @@ rb_tree_t* rb_tree_create()
     }
     T->nil->color = BLACK;  //因为是nil节点
     T->root = T->nil;   //树刚开始时的形态
+    T->latest = NULL;
+    T->oldest = NULL;
+    T->node_num = 0;
     return T;
 }
 rb_tree_node_t* rb_tree_internal_search(rb_tree_t* T, rb_tree_node_t* x, int key)
@@ -286,6 +291,52 @@ int rb_tree_insert(rb_tree_t* T, int key)
     return 0;
 }
 #endif
+static void rb_tree_add_to_timelist(rb_tree_t* T, rb_tree_node_t* node)
+{
+    if(T->oldest == NULL)
+    {
+        T->oldest = node;
+    }
+    if(T->latest == NULL)
+    {
+        T->latest = node;
+    }
+    else
+    {
+        node->next_time = T->latest->next_time;
+        T->latest->next_time->prev_time = node;
+        T->latest->next_time = node;
+        node->prev_time = T->latest;
+    }
+}
+static void rb_tree_remove_from_timelist(rb_tree_t* T, rb_tree_node_t* node)
+{
+    if(node == T->oldest)
+    {
+        if(node->prev_time != NULL)
+        {
+            T->oldest = node->prev_time;
+        }
+    }
+    if(node == T->latest)
+    {
+        if(node->next_time != NULL)
+        {
+            T->latest = node->next_time;
+        }
+    }
+    else
+    {
+        if(node->next_time != NULL)
+        {
+            node->next_time->prev_time = node->prev_time;
+        }
+        if(node->prev_time != NULL)
+        {
+            node->prev_time->next_time = node->next_time;
+        }
+    }
+}
 int rb_tree_insert(rb_tree_t* T, int key)
 {
     rb_tree_node_t* x = T->root;
@@ -323,14 +374,20 @@ int rb_tree_insert(rb_tree_t* T, int key)
         //根节点的父亲节点为T->nil
         T->root = z;
     }
-    if(y->key > z->key)
+    else if(y->key > z->key)
     {
         y->left = z;
     }
-    else if(y->key < z->key)
+    else
     {
         y->right = z;
     }
+    z->left = T->nil;
+    z->right = T->nil;
+    z->color = RED;
+    rb_tree_add_to_timelist(T, z);
+    rb_tree_insert_fixup(T, z);
+    T->node_num++;
     return ret;
 ERR:
     return ret;
@@ -470,23 +527,16 @@ int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
     //要被删除的结点就是z本身，所以y等于z
     //始终保持y指向要被删除的节点或移动到树内的节点
     //x始终指向被删除节点的替代节点
-    rb_tree_node_t* y = NULL;
-    rb_tree_node_t* x = NULL;
+    rb_tree_node_t* y = z;
 
-    int y_ori_color = 0;
+    int y_ori_color = y->color;
     if(z->left == T->nil)
     {
-        y = z;
-        //保存y原来的颜色
-        y_ori_color = y->color;
         x = y->right;
         rb_transplant(T, y, x);
     }
     else if(z->right == T->nil)
     {
-        y = z;
-        //保存y原来的颜色
-        y_ori_color = y->color;
         x = y->left;
         rb_transplant(T, y, x);
     }
@@ -509,6 +559,7 @@ int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
             }
             else
             {
+                //设置x->parent = y->parent，即使x为哨兵节点
                 rb_transplant(T, y, x);
                 y->right = z->right;
                 z->right->parent = y;
@@ -522,10 +573,11 @@ int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
             {
                 rb_tree_delete_fixup(T, x);
             }
-            //将z释放
-            rb_tree_release_node(&z);
         }
     }
+    //释放z
+    rb_tree_release_node(&z);
+    return 0;
 ERR:
     return -1;
 }
@@ -708,8 +760,9 @@ int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
     {
         rb_tree_delete_fixup(T, x, parent);
     }
-    free(y);
-    y =  NULL;
+    rb_tree_remove_from_timelist(T, y);
+    rb_tree_release_node(&y);
+    T->node_num--;
     return ret;
 
 ERR:
@@ -730,6 +783,22 @@ int rb_tree_delete(rb_tree_t* T, int key)
     return ret;
 ERR:
     return ret;
+}
+rb_tree_node_t* rb_tree_get_oldest(rb_tree_t* T)
+{
+    if(T != NULL)
+    {
+        return T->oldest;
+    }
+    return NULL;
+}
+rb_tree_node_t* rb_tree_get_latest(rb_tree_t* T)
+{
+    if(T != NULL)
+    {
+        return T->latest;
+    }
+    return NULL;
 }
 
 
