@@ -22,5 +22,6 @@ typedef struct __rb_tree
 {
     rb_tree_node_t* root;   //指向树根
     rb_tree_node_t* nil;    //指向nil节点
+    unsigned long node_num;  //树中的节点数
 }rb_tree_t;
 #endif
