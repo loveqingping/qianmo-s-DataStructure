@@ -1,0 +1,7 @@
+digraph graphname {
+"0x1f08110" [shape=box,label="1 "];
+"0x1f08110" -> "0x1f08030";
+"0x1f08030" [shape=box,label="0 "];
+"0x1f08110" -> "0x1f081f0";
+"0x1f081f0" [shape=box,label="2 3 "];
+}

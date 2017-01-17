@@ -7,23 +7,97 @@
  */
 #include "red_black.h"
 #include <malloc.h>
-rb_tree_node_t* rb_tree_alloc_node(int key, rb_tree_node_t* init_para)
+#include <assert.h>
+#include <memory.h>
+#include "hyper_queue.h"
+#include <math.h>
+/*返回值：ret > 0 => key1 > key2
+ *ret == 0 => key1 == key2
+ *ret < 0 =>key1 < key2
+ */
+static int rb_tree_default_cmp(void* key1, void* key2, unsigned int key_size)
+{
+        assert(key1 != NULL);
+        assert(key2 != NULL);
+        int ret = memcmp(key1, key2, key_size);
+        return ret;
+}
+static void rb_tree_add_to_timelist(rb_tree_t* T, rb_tree_node_t* node)
+{
+    if(T->oldest == NULL)
+    {
+        T->oldest = node;
+        T->oldest->prev_time = NULL;
+    }
+    if(T->latest == NULL)
+    {
+        T->latest = node;
+        T->latest->next_time = NULL;
+    }
+    else
+    {
+        node->next_time = T->latest->next_time;
+        T->latest->next_time = node;
+        node->prev_time = T->latest;
+        T->latest = node;
+        T->latest->next_time = NULL;
+    }
+}
+static void rb_tree_remove_from_timelist(rb_tree_t* T, rb_tree_node_t* node)
+{
+    if(node == T->oldest)
+    {
+        if(node->next_time != NULL)
+        {
+            T->oldest = node->next_time;
+        }
+        else
+        {
+            T->oldest = NULL;
+        }
+    }
+    if(node == T->latest)
+    {
+        if(node->prev_time != NULL)
+        {
+            T->latest = node->prev_time;
+        }
+        else
+        {
+            T->latest = NULL;
+        }
+    }
+    if(node->next_time != NULL)
+    {
+        node->next_time->prev_time = node->prev_time;
+    }
+    if(node->prev_time != NULL)
+    {
+        node->prev_time->next_time = node->next_time;
+    }
+}
+static rb_tree_node_t* rb_tree_alloc_node(rb_tree_t* T, void* pkey, rb_tree_node_t* init_para)
 {
     rb_tree_node_t* pnode = NULL;
-    pnode = malloc(sizeof(rb_tree_node_t));
+    pnode = (rb_tree_node_t*)malloc(sizeof(rb_tree_node_t) + T->key_size);
     if(pnode == NULL)
     {
         return NULL;
     }
-    pnode->key = -1;
     pnode->right = init_para;
     pnode->left = init_para;
     pnode->parent = init_para;
     pnode->prev_time = NULL;
     pnode->next_time = NULL;
+    //拷贝key
+    if(pkey != NULL)
+    {
+        memcpy(pnode->key, pkey, T->key_size);
+    }
+    rb_tree_add_to_timelist(T, pnode);
     return pnode;
 }
-int rb_tree_release_node(rb_tree_node_t** ppnode)
+static int rb_tree_release_node(rb_tree_t* T, rb_tree_node_t** ppnode)
 {
     if(ppnode ==  NULL)
     {
@@ -34,39 +108,60 @@ int rb_tree_release_node(rb_tree_node_t** ppnode)
     {
         return -1;
     }
-    
+    rb_tree_remove_from_timelist(T, pnode);
     free(pnode);
     *ppnode = NULL;
     return 0;
 }
-rb_tree_t* rb_tree_create()
+rb_tree_t* rb_tree_create(unsigned int key_size, rb_tree_key_cmp_func cmp)
 {
     rb_tree_t* T = malloc(sizeof(rb_tree_t));
+    rb_tree_node_t* nil = NULL;
     if(T == NULL)
     {
-        return NULL;
+        goto ERR;
     }
-    T->nil = rb_tree_alloc_node(-1, NULL);
-    if(T->nil == NULL)
+    T->key_size = key_size;
+    if(cmp != NULL)
     {
-        return NULL;
+        T->cmp = cmp;
     }
+    else
+    {
+        T->cmp = rb_tree_default_cmp;
+    }
+    nil = rb_tree_alloc_node(T, NULL, NULL);
+    if(nil == NULL)
+    {
+        goto ERR;
+    }
+    T->nil = nil;
     T->nil->color = BLACK;  //因为是nil节点
     T->root = T->nil;   //树刚开始时的形态
     T->latest = NULL;
     T->oldest = NULL;
     T->node_num = 0;
     return T;
+ERR:
+    if(T != NULL)
+    {
+        free(T);
+        T = NULL;
+    }
+    return NULL;
 }
-rb_tree_node_t* rb_tree_internal_search(rb_tree_t* T, rb_tree_node_t* x, int key)
+rb_tree_node_t* rb_tree_internal_search(rb_tree_t* T, rb_tree_node_t* x, void* pkey)
 {
+    int ret = 0;
     while(x != T->nil)
     {
-        if(x->key > key)
+        ret = T->cmp(x->key, pkey, T->key_size);
+        //x->key > pkey
+        if(ret > 0)
         {
             x = x->left;
         }
-        else if(x->key < key)
+        else if(ret < 0)
         {
             x = x->right;
         }
@@ -77,7 +172,7 @@ rb_tree_node_t* rb_tree_internal_search(rb_tree_t* T, rb_tree_node_t* x, int key
     }
     return x;
 }
-rb_tree_node_t* rb_tree_search(rb_tree_t* T, int key)
+rb_tree_node_t* rb_tree_search(rb_tree_t* T, void* key)
 {
     //树不为空
     if(T->root != T->nil)
@@ -142,6 +237,7 @@ void rb_tree_right_rotate(rb_tree_t* T, rb_tree_node_t* x)
     {
         y->right->parent = x;
     }
+    y->parent = x->parent;
     //x是根节点
     if(x->parent == T->nil)
     {
@@ -159,7 +255,7 @@ void rb_tree_right_rotate(rb_tree_t* T, rb_tree_node_t* x)
     y->right = x;
     x->parent = y;
 }
-void rb_tree_insert_fixup(rb_tree_t* T, rb_tree_node_t* z)
+static void rb_tree_insert_fixup(rb_tree_t* T, rb_tree_node_t* z)
 {
     //发生双红缺陷时，树至少有3层
     rb_tree_node_t* y = NULL;
@@ -291,66 +387,22 @@ int rb_tree_insert(rb_tree_t* T, int key)
     return 0;
 }
 #endif
-static void rb_tree_add_to_timelist(rb_tree_t* T, rb_tree_node_t* node)
-{
-    if(T->oldest == NULL)
-    {
-        T->oldest = node;
-    }
-    if(T->latest == NULL)
-    {
-        T->latest = node;
-    }
-    else
-    {
-        node->next_time = T->latest->next_time;
-        T->latest->next_time->prev_time = node;
-        T->latest->next_time = node;
-        node->prev_time = T->latest;
-    }
-}
-static void rb_tree_remove_from_timelist(rb_tree_t* T, rb_tree_node_t* node)
-{
-    if(node == T->oldest)
-    {
-        if(node->prev_time != NULL)
-        {
-            T->oldest = node->prev_time;
-        }
-    }
-    if(node == T->latest)
-    {
-        if(node->next_time != NULL)
-        {
-            T->latest = node->next_time;
-        }
-    }
-    else
-    {
-        if(node->next_time != NULL)
-        {
-            node->next_time->prev_time = node->prev_time;
-        }
-        if(node->prev_time != NULL)
-        {
-            node->prev_time->next_time = node->next_time;
-        }
-    }
-}
-int rb_tree_insert(rb_tree_t* T, int key)
+int rb_tree_insert(rb_tree_t* T, void* pkey)
 {
     rb_tree_node_t* x = T->root;
     rb_tree_node_t* y = T->nil;
     rb_tree_node_t* z = NULL;
     int ret = 0;
+    int cmp_ret = 0;
     while(x != T->nil)
     {
         y = x;
-        if(x->key > key)
+        cmp_ret = T->cmp(x->key, pkey, T->key_size);
+        if(cmp_ret > 0)
         {
             x = x->left;
         }
-        else if(x->key < key)
+        else if(cmp_ret < 0)
         {
             x = x->right;
         }
@@ -362,7 +414,7 @@ int rb_tree_insert(rb_tree_t* T, int key)
         }
     }
     //alloc a node
-    z = rb_tree_alloc_node(key, T->nil);
+    z = rb_tree_alloc_node(T, pkey, T->nil);
     if(z == NULL)
     {
         goto ERR;
@@ -374,18 +426,21 @@ int rb_tree_insert(rb_tree_t* T, int key)
         //根节点的父亲节点为T->nil
         T->root = z;
     }
-    else if(y->key > z->key)
-    {
-        y->left = z;
-    }
     else
     {
-        y->right = z;
+        cmp_ret = T->cmp(z->key, y->key, T->key_size);
+        if(cmp_ret < 0)
+        {
+            y->left = z;
+        }
+        else
+        {
+            y->right = z;
+        }
     }
     z->left = T->nil;
     z->right = T->nil;
     z->color = RED;
-    rb_tree_add_to_timelist(T, z);
     rb_tree_insert_fixup(T, z);
     T->node_num++;
     return ret;
@@ -409,7 +464,7 @@ void rb_transplant(rb_tree_t* T, rb_tree_node_t* u, rb_tree_node_t* v)
     }
     v->parent = u->parent;
 }
-rb_tree_node_t* rb_tree_successor(rb_tree_t* T, rb_tree_node_t* z)
+static rb_tree_node_t* rb_tree_successor(rb_tree_t* T, rb_tree_node_t* z)
 {
     rb_tree_node_t* ret = NULL;
     if( (z == T->nil) || (z == NULL) )
@@ -582,7 +637,7 @@ ERR:
     return -1;
 }
 #endif
-void rb_tree_delete_fixup(rb_tree_t* T, rb_tree_node_t* x, rb_tree_node_t* parent)
+static void rb_tree_delete_fixup(rb_tree_t* T, rb_tree_node_t* x, rb_tree_node_t* parent)
 {
 
     /*************************************
@@ -624,6 +679,7 @@ void rb_tree_delete_fixup(rb_tree_t* T, rb_tree_node_t* x, rb_tree_node_t* paren
                 {
                     //因为w->left->color 为红色,可以将其变为黑色，来增加黑节点数目
                     //，从而使全树黑高度平衡
+                    w->color = RED;
                     w->left->color = BLACK;
                     rb_tree_right_rotate(T, w);
                     //右旋之后，更新w
@@ -684,7 +740,7 @@ void rb_tree_delete_fixup(rb_tree_t* T, rb_tree_node_t* x, rb_tree_node_t* paren
     }
     x->color = BLACK;
 }
-int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
+static int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
 {
     //当z有一个孩子或0个孩子时
     //要被删除的结点就是z本身，所以y等于z
@@ -706,7 +762,7 @@ int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
     else
     {
         y = z->right;
-/* find tree successor with a NIL node as a child */
+        /* find tree successor with a NIL node as a child */
         while(y->left != T->nil)
         {
             y = y->left;
@@ -737,7 +793,7 @@ int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
             parent->right = x;
         }
     }
-    //假设z只有一个孩子，y = z 而且z为根节点，则会进入此分支
+    //根节点的父节点为nil节点，假设z只有一个孩子，y = z 而且z为根节点，则会进入此分支
     //y的父节点为nil节点, 则y为根节点
     else
     {
@@ -749,30 +805,25 @@ int rb_tree_delete_internal(rb_tree_t* T, rb_tree_node_t* z)
          *       *  Move the child's data to here, and then
          *               *  re-balance the tree.
          *                       */
-        z->key = y->key;
+        /* z->key = y->key; */
+        memcpy(z->key, y->key, T->key_size);
     }
     //z只有一个孩子
-    else
-    {
-
-    }
-    if(y->color == BLACK && x != T->nil)
+    if(y->color == BLACK)
     {
         rb_tree_delete_fixup(T, x, parent);
     }
-    rb_tree_remove_from_timelist(T, y);
-    rb_tree_release_node(&y);
+    rb_tree_release_node(T, &y);
     T->node_num--;
     return ret;
-
 ERR:
     return ret;
 }
 
-int rb_tree_delete(rb_tree_t* T, int key)
+int rb_tree_delete(rb_tree_t* T, void* pkey)
 {
     int ret = 0;
-    rb_tree_node_t* node = rb_tree_search(T, key);
+    rb_tree_node_t* node = rb_tree_search(T, pkey);
     //如果树中无这个关键字
     if(node == T->nil)
     {
@@ -799,6 +850,155 @@ rb_tree_node_t* rb_tree_get_latest(rb_tree_t* T)
         return T->latest;
     }
     return NULL;
+}
+unsigned int rb_tree_get_node_num(rb_tree_t* T)
+{
+    return T->node_num;
+}
+void rb_tree_destroy(rb_tree_t** pt)
+{
+    /* if(T->node_num <= 0) */
+    /* { */
+        /* return; */
+    /* } */
+    if(pt == NULL)
+    {
+        return;
+    }
+    rb_tree_node_t* cur_node = NULL;
+    rb_tree_node_t* prev_node = NULL;
+    rb_tree_t* T = *pt;
+    if(T == NULL)
+    {
+        return;
+    }
+    else
+    {
+        if(T->latest != NULL && T->oldest != NULL)
+        {
+            cur_node = T->latest;
+            /* printf("destroy:\n"); */
+            while(cur_node != NULL)
+            {
+                printf("cur_node:%p\n", cur_node);
+                prev_node = cur_node->prev_time;
+                free(cur_node);
+                cur_node = prev_node;
+            }
+            T->latest = NULL;
+            T->oldest = NULL;
+        }
+        if(T->nil != NULL)
+        {
+            free(T->nil);
+        }
+        T->nil = NULL;
+        free(T);
+        T = NULL;
+        *pt = T;
+    }
+}
+static int Height(rb_tree_node_t* root)
+{
+    int lh = 0;
+    int rh = 0;
+    if(root == NULL)
+    {
+        return -1;
+    }
+    lh = Height(root->left);
+    rh = Height(root->right);
+    return (lh > rh ? lh : rh) + 1;
+}
+/* 打印函数只适合打印key为整型的红黑树 */
+int rb_tree_display(rb_tree_node_t* root)
+{
+    hyper_queue_t queue;
+    hyper_queue_t* phq = &queue;
+    hyper_queue_init(phq, sizeof(rb_tree_node_t*), 1024);
+    rb_tree_node_t* tmp = root;
+    hyper_queue_put(phq, (void*)(&tmp), sizeof(void*));
+    int h = Height(root);
+    int H = h + 1;
+    int key_length = 4;
+    int power = 0;
+    int interval = (key_length >> 1);
+    int i = 0;
+    int j = 0;
+    int k = 0;
+
+    for (i = 0; i <= h; ++i)
+    {
+        for (k = 0; k < (int)pow((double)2, i); k++)
+        {
+
+            /*先
+             * 打
+             * 印
+             * 1
+             * *
+             * interval*/
+            for (j = 0; j < 1 * interval; j++)
+            {
+                printf(" ");
+            }
+            power = (int)pow((double)2, h - i) - 1;
+            for (j = 0; j < power * key_length ; j++)
+            {
+                printf(" ");
+            }
+            hyper_queue_get(phq, (void*)(&tmp), sizeof(void*));
+            if (tmp != NULL)
+            {
+                if (tmp->color == RED)
+                {
+                    printf("r");
+                    printf("%-2d", (*(int*)tmp->key));
+                    printf(" ");    //key_length == 4
+                }
+                else if (tmp->color == BLACK)
+                {
+                    printf("b");
+                    printf("%-2d", *(int*)tmp->key);
+                    printf(" ");    //key_length == 4
+                }
+
+            }
+            else
+            {
+                printf("@");
+                printf(" ");
+                printf(" ");
+                printf(" ");    //key_length == 4
+            }
+            if (tmp == NULL)
+            {
+                hyper_queue_put(phq, (void*)(&tmp), sizeof(void*));
+                hyper_queue_put(phq, (void*)(&tmp), sizeof(void*));
+            }
+            else
+            {
+                hyper_queue_put(phq, (void*)(&(tmp->left)), sizeof(void*));
+                hyper_queue_put(phq, (void*)(&(tmp->right)), sizeof(void*));
+            }
+            for (j = 0; j < power * key_length; j++)
+            {
+                printf(" ");
+            }
+            /*再
+             * 打
+             * 印
+             * 1
+             * *
+             * interval*/
+            for (j = 0; j < 1 * interval; j++)
+            {
+                printf(" ");
+            }
+        }
+        printf("\n");
+    }
+    return 0;
 }
 
 
